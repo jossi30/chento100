@@ -69,34 +69,6 @@ export default function SignIn() {
         >
           {loading ? t('signin.loading') : t('signin.submitButton')}
         </button>
-        <div className='flex flex-col sm:flex-row gap-2'>
-          <button
-            type='button'
-            onClick={() => {
-              const emailInput = document.getElementById('email');
-              const passInput = document.getElementById('password');
-              if (emailInput) emailInput.value = 'sahand@example.com';
-              if (passInput) passInput.value = 'password123';
-              setFormData({ email: 'sahand@example.com', password: 'password123' });
-            }}
-            className='flex-1 bg-emerald-600 text-white p-2.5 rounded-lg uppercase hover:opacity-95 text-xs font-semibold'
-          >
-            {t('signin.demoAccount')}
-          </button>
-          <button
-            type='button'
-            onClick={() => {
-              const emailInput = document.getElementById('email');
-              const passInput = document.getElementById('password');
-              if (emailInput) emailInput.value = 'admin@chento100.com';
-              if (passInput) passInput.value = 'password123';
-              setFormData({ email: 'admin@chento100.com', password: 'password123' });
-            }}
-            className='flex-1 bg-slate-900 text-amber-300 p-2.5 rounded-lg uppercase hover:bg-slate-800 text-xs font-bold border border-slate-700'
-          >
-            Fill Demo Admin
-          </button>
-        </div>
         <OAuth/>
       </form>
       <div className='flex gap-2 mt-5'>
