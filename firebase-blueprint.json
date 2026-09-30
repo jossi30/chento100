@@ -1,0 +1,221 @@
+{
+  "entities": {
+    "listing": {
+      "title": "Listing",
+      "description": "Guest house rental or private car with chauffeur listing",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Listing title",
+          "maxLength": 200
+        },
+        "name": {
+          "type": "string",
+          "description": "Alias for listing title",
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "description": "Comprehensive description of accommodations or car service",
+          "maxLength": 5000
+        },
+        "address": {
+          "type": "string",
+          "description": "Physical location or service route area",
+          "maxLength": 300
+        },
+        "location": {
+          "type": "string",
+          "description": "Alias for address",
+          "maxLength": 300
+        },
+        "regularPrice": {
+          "type": "number",
+          "description": "Standard daily or nightly rate in USD"
+        },
+        "price": {
+          "type": "number",
+          "description": "Alias for regularPrice"
+        },
+        "discountPrice": {
+          "type": "number",
+          "description": "Optional promotional price"
+        },
+        "discountedPrice": {
+          "type": "number",
+          "description": "Alias for discountPrice"
+        },
+        "category": {
+          "type": "string",
+          "description": "Service category",
+          "enum": ["guesthouse", "car_service"]
+        },
+        "type": {
+          "type": "string",
+          "description": "Listing operation type",
+          "enum": ["rent", "sale"]
+        },
+        "offer": {
+          "type": "boolean",
+          "description": "Flag indicating special deal"
+        },
+        "isApproved": {
+          "type": "boolean",
+          "description": "Admin moderation approval state"
+        },
+        "status": {
+          "type": "string",
+          "description": "Listing lifecycle status",
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Public visibility toggle"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Alias for active"
+        },
+        "bathrooms": {
+          "type": "number",
+          "description": "Number of bathrooms"
+        },
+        "bedrooms": {
+          "type": "number",
+          "description": "Number of bedrooms"
+        },
+        "maxGuests": {
+          "type": "number",
+          "description": "Maximum guest capacity"
+        },
+        "furnished": {
+          "type": "boolean",
+          "description": "Furnished property toggle"
+        },
+        "parking": {
+          "type": "boolean",
+          "description": "Designated parking toggle"
+        },
+        "amenities": {
+          "type": "array",
+          "description": "List of available amenities or features"
+        },
+        "imageUrls": {
+          "type": "array",
+          "description": "Photo URLs for the listing"
+        },
+        "imageURLs": {
+          "type": "array",
+          "description": "Alias for imageUrls"
+        },
+        "make": {
+          "type": "string",
+          "description": "Vehicle manufacturer",
+          "maxLength": 100
+        },
+        "model": {
+          "type": "string",
+          "description": "Vehicle model name",
+          "maxLength": 100
+        },
+        "year": {
+          "type": "number",
+          "description": "Model year"
+        },
+        "seats": {
+          "type": "number",
+          "description": "Passenger seating count"
+        },
+        "transmission": {
+          "type": "string",
+          "description": "Vehicle transmission type",
+          "maxLength": 50
+        },
+        "driverIncluded": {
+          "type": "boolean",
+          "description": "Professional chauffeur included"
+        },
+        "driverName": {
+          "type": "string",
+          "description": "Assigned driver name",
+          "maxLength": 100
+        },
+        "driverContact": {
+          "type": "string",
+          "description": "Driver contact telephone",
+          "maxLength": 50
+        },
+        "userRef": {
+          "type": "string",
+          "description": "Owner / creator identifier",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["description", "category", "userRef"]
+    },
+    "user": {
+      "title": "User",
+      "description": "Registered platform user or administrator profile",
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string",
+          "description": "Display handle or name",
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address",
+          "format": "email",
+          "maxLength": 200
+        },
+        "avatar": {
+          "type": "string",
+          "description": "Profile picture URL",
+          "maxLength": 1000
+        },
+        "role": {
+          "type": "string",
+          "description": "Platform permission role",
+          "enum": ["user", "admin"]
+        },
+        "isAdmin": {
+          "type": "boolean",
+          "description": "Administrator flag"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Account registration timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Account update timestamp"
+        }
+      },
+      "required": ["username", "email"]
+    }
+  },
+  "firestore": {
+    "/listings/{listingId}": {
+      "schema": "listing",
+      "description": "Collection of all guest houses and chauffeured car rental listings"
+    },
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "User profile accounts and permissions"
+    }
+  }
+}

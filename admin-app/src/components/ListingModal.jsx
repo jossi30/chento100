@@ -6,6 +6,7 @@ export default function ListingModal({
   onApprove,
   onReject,
   onToggleActive,
+  onDelete,
   actionLoading,
   isTogglingActive,
 }) {
@@ -214,7 +215,7 @@ export default function ListingModal({
 
         {/* Modal Action Controls */}
         <div className='flex items-center justify-between gap-3 pt-4 border-t border-slate-100 flex-wrap'>
-          <div>
+          <div className='flex items-center gap-2'>
             {onToggleActive && (
               <button
                 type='button'
@@ -235,6 +236,24 @@ export default function ListingModal({
                     ? 'Listing Active (Click to Deactivate)'
                     : 'Listing Inactive (Click to Activate)'}
                 </span>
+              </button>
+            )}
+
+            {onDelete && (
+              <button
+                type='button'
+                id={'modal-delete-btn-' + listing._id}
+                onClick={() => {
+                  onDelete(listing);
+                  onClose();
+                }}
+                className='inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors'
+                title='Delete listing permanently'
+              >
+                <svg className='w-3.5 h-3.5' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                  <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' />
+                </svg>
+                <span>Delete</span>
               </button>
             )}
           </div>

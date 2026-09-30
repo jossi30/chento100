@@ -2,6 +2,7 @@ import bcryptjs from 'bcryptjs';
 
 const mockUsers = new Map();
 const mockListings = new Map();
+const deletedListingIds = new Set();
 
 // Seed initial mock user
 const initialUser = {
@@ -263,7 +264,7 @@ export const mockStore = {
   },
 
   getListings(query = {}) {
-    let list = Array.from(mockListings.values());
+    let list = Array.from(mockListings.values()).filter((item) => !deletedListingIds.has(item._id));
 
     // Search term
     if (query.searchTerm && typeof query.searchTerm === 'string') {
@@ -365,11 +366,13 @@ export const mockStore = {
   },
 
   getListing(id) {
+    if (deletedListingIds.has(id)) return null;
     return mockListings.get(id) || null;
   },
 
   createListing(data) {
-    const id = 'listing_' + Date.now();
+    const id = data._id || 'listing_' + Date.now();
+    deletedListingIds.delete(id);
     const category = data.category === 'car' ? 'car_service' : data.category || 'guesthouse';
     const isApproved =
       data.isApproved !== undefined ? Boolean(data.isApproved) : data.status === 'approved';
@@ -445,6 +448,7 @@ export const mockStore = {
   },
 
   deleteListing(id) {
+    deletedListingIds.add(id);
     return mockListings.delete(id);
   },
 

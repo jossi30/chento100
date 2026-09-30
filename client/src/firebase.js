@@ -1,17 +1,26 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp } from 'firebase/app';
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+import { initializeApp, getApps } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import firebaseConfig from '../../firebase-applet-config.json';
 
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyMockKeyForDevEnvironment12345',
-  authDomain: 'mern-estate.firebaseapp.com',
-  projectId: 'mern-estate',
-  storageBucket: 'mern-estate.appspot.com',
-  messagingSenderId: '1078482850952',
-  appId: '1:1078482850952:web:28f19139ab77246602fb3d',
-};
+// Initialize Firebase App
+export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Initialize Firebase
-export const app = initializeApp(firebaseConfig);
+// Initialize Firestore Database with explicit database ID
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Initialize Firebase Auth
+export const auth = getAuth(app);
+
+// Critical constraint: test Firestore connection on boot
+export async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn('[Firebase] Client is offline or database initializing. Check Firebase configuration.');
+    }
+  }
+}
+
+testConnection();

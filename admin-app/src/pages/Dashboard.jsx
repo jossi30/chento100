@@ -3,14 +3,16 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Toast from '../components/Toast';
 import ListingModal from '../components/ListingModal';
+import CreateListingModal from '../components/CreateListingModal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Active Tab: 'pending' (Moderation Queue) | 'all' (All Listings Directory)
-  const [activeTab, setActiveTab] = useState('pending');
+  // Active Tab: default to 'all' so EVERY listing appears on the list immediately
+  const [activeTab, setActiveTab] = useState('all');
 
   // Pending listings state
   const [pendingListings, setPendingListings] = useState([]);
@@ -33,9 +35,23 @@ export default function Dashboard() {
   const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' }
   const [inspectListing, setInspectListing] = useState(null);
 
+  // Add & Delete Modals State
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [deletingListing, setDeletingListing] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
   };
+
+  const getAuthHeaders = useCallback(() => ({
+    'Content-Type': 'application/json',
+    ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {}),
+    ...(user?._id ? { 'x-user-id': user._id } : {}),
+    ...(user?.email ? { 'x-user-email': user.email } : {}),
+    'x-user-role': 'admin',
+    'x-admin-auth': 'true',
+  }), [user]);
 
   const handleSignOut = async () => {
     await logout();
@@ -50,7 +66,7 @@ export default function Dashboard() {
     try {
       const res = await fetch('/api/admin/listings/pending', {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         credentials: 'include',
       });
 
@@ -67,18 +83,27 @@ export default function Dashboard() {
     } finally {
       if (!isSilent) setPendingLoading(false);
     }
-  }, []);
+  }, [getAuthHeaders]);
 
   // Fetch All Listings (Approved + Pending + Rejected)
   const fetchAllListings = useCallback(async (isSilent = false) => {
     if (!isSilent) setAllLoading(true);
     setAllError(null);
     try {
-      const res = await fetch('/api/admin/listings/all', {
+      let res = await fetch('/api/admin/listings/all', {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         credentials: 'include',
       });
+
+      if (!res.ok) {
+        // Fallback to /api/admin/listings
+        res = await fetch('/api/admin/listings', {
+          method: 'GET',
+          headers: getAuthHeaders(),
+          credentials: 'include',
+        });
+      }
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -93,7 +118,7 @@ export default function Dashboard() {
     } finally {
       if (!isSilent) setAllLoading(false);
     }
-  }, []);
+  }, [getAuthHeaders]);
 
   // Initial load
   useEffect(() => {
@@ -107,7 +132,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`/api/admin/listings/${id}/approve`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         credentials: 'include',
       });
 
@@ -121,10 +146,10 @@ export default function Dashboard() {
       // Update in both lists locally & refresh
       setPendingListings((prev) => prev.filter((item) => item._id !== id));
       setAllListings((prev) =>
-        prev.map((item) => (item._id === id ? { ...item, status: 'approved' } : item))
+        prev.map((item) => (item._id === id ? { ...item, status: 'approved', isApproved: true } : item))
       );
       if (inspectListing && inspectListing._id === id) {
-        setInspectListing((prev) => ({ ...prev, status: 'approved' }));
+        setInspectListing((prev) => ({ ...prev, status: 'approved', isApproved: true }));
       }
       fetchPendingListings(true);
       fetchAllListings(true);
@@ -142,7 +167,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`/api/admin/listings/${id}/reject`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         credentials: 'include',
       });
 
@@ -156,10 +181,10 @@ export default function Dashboard() {
       // Update in both lists locally & refresh
       setPendingListings((prev) => prev.filter((item) => item._id !== id));
       setAllListings((prev) =>
-        prev.map((item) => (item._id === id ? { ...item, status: 'rejected' } : item))
+        prev.map((item) => (item._id === id ? { ...item, status: 'rejected', isApproved: false } : item))
       );
       if (inspectListing && inspectListing._id === id) {
-        setInspectListing((prev) => ({ ...prev, status: 'rejected' }));
+        setInspectListing((prev) => ({ ...prev, status: 'rejected', isApproved: false }));
       }
       fetchPendingListings(true);
       fetchAllListings(true);
@@ -177,7 +202,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`/api/admin/listings/${id}/toggle-active`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         credentials: 'include',
       });
 
@@ -194,15 +219,15 @@ export default function Dashboard() {
 
       // Update all listings state
       setAllListings((prev) =>
-        prev.map((item) => (item._id === id ? { ...item, active: newActive } : item))
+        prev.map((item) => (item._id === id ? { ...item, active: newActive, isActive: newActive } : item))
       );
       // Update pending list state if present
       setPendingListings((prev) =>
-        prev.map((item) => (item._id === id ? { ...item, active: newActive } : item))
+        prev.map((item) => (item._id === id ? { ...item, active: newActive, isActive: newActive } : item))
       );
       // Update modal if currently inspecting
       if (inspectListing && inspectListing._id === id) {
-        setInspectListing((prev) => ({ ...prev, active: newActive }));
+        setInspectListing((prev) => ({ ...prev, active: newActive, isActive: newActive }));
       }
     } catch (err) {
       console.error('Toggle active error:', err);
@@ -210,6 +235,60 @@ export default function Dashboard() {
     } finally {
       setToggleLoadingId(null);
     }
+  };
+
+  // Handle Delete Confirmation
+  const handleDeleteConfirm = async () => {
+    if (!deletingListing) return;
+    const id = deletingListing._id;
+    const title = deletingListing.title || deletingListing.name || 'Listing';
+
+    try {
+      setIsDeleting(true);
+      let res = await fetch(`/api/admin/listings/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        res = await fetch(`/api/listing/delete/${id}`, {
+          method: 'DELETE',
+          headers: getAuthHeaders(),
+          credentials: 'include',
+        });
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.message || `Failed to delete listing (${res.status})`);
+      }
+
+      showToast(`Listing "${title}" permanently deleted.`, 'success');
+      setAllListings((prev) => prev.filter((item) => item._id !== id));
+      setPendingListings((prev) => prev.filter((item) => item._id !== id));
+      if (inspectListing && inspectListing._id === id) {
+        setInspectListing(null);
+      }
+      setDeletingListing(null);
+    } catch (err) {
+      console.error('Delete listing error:', err);
+      showToast(err.message || 'Failed to delete listing.', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Handle Listing Created
+  const handleListingCreated = (newListing) => {
+    showToast(`Listing "${newListing.title || newListing.name}" created successfully!`, 'success');
+    setAllListings((prev) => [newListing, ...prev]);
+    if (newListing.status === 'pending' || newListing.isApproved === false) {
+      setPendingListings((prev) => [newListing, ...prev]);
+    }
+    // Refresh directory silently
+    fetchAllListings(true);
+    fetchPendingListings(true);
   };
 
   // Filtered All Listings
@@ -263,8 +342,26 @@ export default function Dashboard() {
         onApprove={handleApprove}
         onReject={handleReject}
         onToggleActive={handleToggleActive}
+        onDelete={(item) => setDeletingListing(item)}
         actionLoading={actionLoading}
         isTogglingActive={inspectListing && toggleLoadingId === inspectListing._id}
+      />
+
+      {/* Add New Listing Modal */}
+      <CreateListingModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreated={handleListingCreated}
+        authHeaders={getAuthHeaders}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={!!deletingListing}
+        listing={deletingListing}
+        onClose={() => setDeletingListing(null)}
+        onConfirm={handleDeleteConfirm}
+        loading={isDeleting}
       />
 
       {/* Top Navbar */}
@@ -284,7 +381,19 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className='flex items-center gap-4'>
+          <div className='flex items-center gap-3 sm:gap-4'>
+            <button
+              type='button'
+              id='admin-add-listing-header-btn'
+              onClick={() => setIsCreateModalOpen(true)}
+              className='inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs shadow-xs transition-colors'
+            >
+              <svg className='w-3.5 h-3.5' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2.5} d='M12 4v16m8-8H4' />
+              </svg>
+              <span>+ Add Listing</span>
+            </button>
+
             {user && (
               <div className='flex items-center gap-2.5 text-sm'>
                 {user.avatar ? (
@@ -325,6 +434,28 @@ export default function Dashboard() {
           <div className='flex items-center gap-2 sm:gap-3'>
             <button
               type='button'
+              id='tab-all-listings'
+              onClick={() => setActiveTab('all')}
+              className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                activeTab === 'all'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span>All Listings Directory</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                  activeTab === 'all'
+                    ? 'bg-slate-700 text-white'
+                    : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                {allListings.length}
+              </span>
+            </button>
+
+            <button
+              type='button'
               id='tab-pending-listings'
               onClick={() => setActiveTab('pending')}
               className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
@@ -342,28 +473,6 @@ export default function Dashboard() {
                 }`}
               >
                 {pendingListings.length}
-              </span>
-            </button>
-
-            <button
-              type='button'
-              id='tab-all-listings'
-              onClick={() => setActiveTab('all')}
-              className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
-                activeTab === 'all'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <span>All Listings Inventory</span>
-              <span
-                className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                  activeTab === 'all'
-                    ? 'bg-slate-700 text-white'
-                    : 'bg-slate-100 text-slate-700'
-                }`}
-              >
-                {allListings.length}
               </span>
             </button>
           </div>
@@ -575,6 +684,18 @@ export default function Dashboard() {
 
                                   <button
                                     type='button'
+                                    id={'pending-delete-btn-' + item._id}
+                                    onClick={() => setDeletingListing(item)}
+                                    className='p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors'
+                                    title='Delete Listing'
+                                  >
+                                    <svg className='w-4 h-4' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                                      <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' />
+                                    </svg>
+                                  </button>
+
+                                  <button
+                                    type='button'
                                     id={'reject-btn-' + item._id}
                                     disabled={isActing}
                                     onClick={() => handleReject(item._id, title)}
@@ -662,7 +783,15 @@ export default function Dashboard() {
                               onClick={() => setInspectListing(item)}
                               className='flex-1 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors'
                             >
-                              View Details
+                              Details
+                            </button>
+
+                            <button
+                              type='button'
+                              onClick={() => setDeletingListing(item)}
+                              className='px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors'
+                            >
+                              Delete
                             </button>
 
                             <button
@@ -712,6 +841,18 @@ export default function Dashboard() {
                 </div>
 
                 <div className='flex items-center gap-3 self-start lg:self-center'>
+                  <button
+                    type='button'
+                    id='admin-add-listing-directory-btn'
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className='inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors shadow-xs'
+                  >
+                    <svg className='w-4 h-4' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                      <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2.5} d='M12 4v16m8-8H4' />
+                    </svg>
+                    <span>+ Add New Listing</span>
+                  </button>
+
                   <button
                     type='button'
                     id='refresh-all-listings-btn'
@@ -1061,17 +1202,31 @@ export default function Dashboard() {
                               </td>
 
                               <td className='py-4 px-5 text-right whitespace-nowrap'>
-                                <button
-                                  type='button'
-                                  id={'inspect-all-btn-' + item._id}
-                                  onClick={() => setInspectListing(item)}
-                                  className='inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors'
-                                >
-                                  <span>Inspect</span>
-                                  <svg className='w-3.5 h-3.5 text-slate-500' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
-                                    <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M9 5l7 7-7 7' />
-                                  </svg>
-                                </button>
+                                <div className='inline-flex items-center gap-2 justify-end'>
+                                  <button
+                                    type='button'
+                                    id={'inspect-all-btn-' + item._id}
+                                    onClick={() => setInspectListing(item)}
+                                    className='inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors'
+                                  >
+                                    <span>Inspect</span>
+                                    <svg className='w-3.5 h-3.5 text-slate-500' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                                      <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M9 5l7 7-7 7' />
+                                    </svg>
+                                  </button>
+
+                                  <button
+                                    type='button'
+                                    id={'all-delete-btn-' + item._id}
+                                    onClick={() => setDeletingListing(item)}
+                                    className='p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors'
+                                    title='Delete Listing permanently'
+                                  >
+                                    <svg className='w-4 h-4' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                                      <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' />
+                                    </svg>
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -1183,13 +1338,22 @@ export default function Dashboard() {
                             </button>
                           </div>
 
-                          <button
-                            type='button'
-                            onClick={() => setInspectListing(item)}
-                            className='w-full py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors'
-                          >
-                            View Full Details
-                          </button>
+                          <div className='flex items-center gap-2'>
+                            <button
+                              type='button'
+                              onClick={() => setInspectListing(item)}
+                              className='flex-1 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors'
+                            >
+                              View Details
+                            </button>
+                            <button
+                              type='button'
+                              onClick={() => setDeletingListing(item)}
+                              className='px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors'
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       );
                     })}

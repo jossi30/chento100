@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import SwiperCore from 'swiper';
 import { useSelector } from 'react-redux';
@@ -36,8 +36,47 @@ export default function Listing() {
   const [copied, setCopied] = useState(false);
   const [contact, setContact] = useState(false);
   const [enquireModalOpen, setEnquireModalOpen] = useState(false);
+  const [showAdminDeleteConfirm, setShowAdminDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const navigate = useNavigate();
   const params = useParams();
   const { currentUser } = useSelector((state) => state.user);
+
+  const isAdmin = currentUser && (
+    currentUser.isAdmin === true ||
+    currentUser.role === 'admin' ||
+    currentUser.email === 'jossvision11@gmail.com' ||
+    currentUser.email === 'admin@chento100.com'
+  );
+
+  const handleAdminDelete = async () => {
+    if (!listing) return;
+    try {
+      setIsDeleting(true);
+      const res = await fetch(`/api/admin/listings/${listing._id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {}),
+          ...(currentUser?._id ? { 'x-user-id': currentUser._id } : {}),
+          ...(currentUser?.email ? { 'x-user-email': currentUser.email } : {}),
+          'x-admin-auth': 'true',
+          'x-user-role': 'admin',
+        },
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.message || 'Failed to delete listing');
+      }
+      navigate('/admin/dashboard', { replace: true });
+    } catch (err) {
+      alert('Error deleting listing: ' + err.message);
+    } finally {
+      setIsDeleting(false);
+      setShowAdminDeleteConfirm(false);
+    }
+  };
 
   useEffect(() => {
     const fetchListing = async () => {
@@ -110,6 +149,35 @@ export default function Listing() {
           )}
 
           <div className='max-w-4xl mx-auto my-7'>
+            {/* Admin Ultimate Powers Banner */}
+            {isAdmin && (
+              <div className='bg-red-50/90 border border-red-200 rounded-2xl p-4 mb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs'>
+                <div className='flex items-center gap-2.5'>
+                  <span className='px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider bg-red-600 text-white rounded-md shrink-0 shadow-2xs'>
+                    Admin Powers
+                  </span>
+                  <span className='text-xs text-red-950 font-medium'>
+                    You have master administrative authority to manage or eradicate this listing from the backend.
+                  </span>
+                </div>
+                <div className='flex items-center gap-2 shrink-0'>
+                  <Link
+                    to={`/admin/dashboard`}
+                    className='px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition'
+                  >
+                    Admin Portal
+                  </Link>
+                  <button
+                    type='button'
+                    onClick={() => setShowAdminDeleteConfirm(true)}
+                    className='px-3.5 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-xs transition flex items-center gap-1.5 cursor-pointer'
+                  >
+                    <span>🗑️ Delete from Backend</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className='bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-xs flex flex-col gap-5'>
               <div className='flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 border-b border-slate-100 pb-4'>
                 <h1 className='text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight'>
@@ -292,6 +360,46 @@ export default function Listing() {
               isOpen={enquireModalOpen}
               onClose={() => setEnquireModalOpen(false)}
             />
+
+            {/* Admin Ultimate Delete Confirmation Modal */}
+            {showAdminDeleteConfirm && (
+              <div className='fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs'>
+                <div className='bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-red-200'>
+                  <div className='w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4'>
+                    <svg className='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                      <path strokeLinecap='round' strokeLinejoin='round' strokeWidth='2' d='M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' />
+                    </svg>
+                  </div>
+                  <h3 className='text-lg font-bold text-slate-900 mb-1.5'>
+                    Permanently Delete from Backend?
+                  </h3>
+                  <p className='text-xs text-slate-600 mb-3'>
+                    You are using Admin Ultimate Powers to delete <span className='font-bold text-slate-900'>&ldquo;{listing.title || listing.name}&rdquo;</span> (ID: <code className='bg-slate-100 px-1 py-0.5 rounded text-[11px]'>{listing._id}</code>).
+                  </p>
+                  <div className='p-3 bg-red-50 text-red-800 text-xs rounded-xl mb-5 border border-red-200'>
+                    ⚠️ This permanently erases the listing from Cloud Firestore, memory store, and all search indices. This action is irreversible.
+                  </div>
+                  <div className='flex items-center justify-end gap-3'>
+                    <button
+                      type='button'
+                      onClick={() => setShowAdminDeleteConfirm(false)}
+                      disabled={isDeleting}
+                      className='px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg cursor-pointer'
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type='button'
+                      onClick={handleAdminDelete}
+                      disabled={isDeleting}
+                      className='px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg cursor-pointer flex items-center gap-1.5'
+                    >
+                      {isDeleting ? 'Erasing...' : 'Yes, Delete Permanently'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

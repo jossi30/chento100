@@ -15,7 +15,6 @@ export default function CreateListing() {
   const { t } = useLanguage();
   const { currentUser } = useSelector((state) => state.user);
 
-  const [files, setFiles] = useState([]);
   const [formData, setFormData] = useState({
     imageUrls: [],
     title: '',
@@ -60,30 +59,35 @@ export default function CreateListing() {
     }));
   };
 
-  const handleImageSubmit = () => {
-    if (files.length > 0 && files.length + formData.imageUrls.length < 7) {
-      setUploading(true);
-      setImageUploadError(false);
-      const promises = [];
+  const handleProcessLocalFiles = async (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    const incomingFiles = Array.from(fileList).filter((f) => f.type.startsWith('image/'));
+    if (incomingFiles.length === 0) {
+      setImageUploadError('Please select valid image files (.jpg, .png, .webp)');
+      return;
+    }
 
-      for (let i = 0; i < files.length; i++) {
-        promises.push(storeImage(files[i]));
-      }
-      Promise.all(promises)
-        .then((urls) => {
-          setFormData({
-            ...formData,
-            imageUrls: formData.imageUrls.concat(urls.filter(Boolean)),
-          });
-          setImageUploadError(false);
-          setUploading(false);
-        })
-        .catch(() => {
-          setImageUploadError('Image upload failed. Please try again with valid image files.');
-          setUploading(false);
-        });
-    } else {
-      setImageUploadError('You can only upload 6 images per listing');
+    if (incomingFiles.length + formData.imageUrls.length > 6) {
+      setImageUploadError('You can only have up to 6 images per listing');
+      return;
+    }
+
+    setUploading(true);
+    setImageUploadError(false);
+
+    try {
+      const promises = incomingFiles.map((file) => storeImage(file));
+      const urls = await Promise.all(promises);
+      const validUrls = urls.filter(Boolean);
+
+      setFormData((prev) => ({
+        ...prev,
+        imageUrls: Array.from(new Set([...prev.imageUrls, ...validUrls])).slice(0, 6),
+      }));
+    } catch (err) {
+      console.error('Local image upload error:', err);
+      setImageUploadError('Could not process images from local system. Please try again.');
+    } finally {
       setUploading(false);
     }
   };
@@ -255,11 +259,23 @@ export default function CreateListing() {
         }
       }
 
+      if (currentUser?.isAdmin) {
+        payload.isApproved = true;
+        payload.status = 'approved';
+        payload.active = true;
+        payload.isActive = true;
+      }
+
       const res = await fetch('/api/listing/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {}),
+          ...(currentUser?._id ? { 'x-user-id': currentUser._id } : {}),
+          ...(currentUser?.email ? { 'x-user-email': currentUser.email } : {}),
+          ...(currentUser?.isAdmin ? { 'x-user-role': 'admin', 'x-admin-auth': 'true' } : {}),
         },
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
 
@@ -282,7 +298,6 @@ export default function CreateListing() {
 
   const handleResetForm = () => {
     setSubmittedListing(null);
-    setFiles([]);
     setFormData({
       imageUrls: [],
       title: '',
@@ -773,30 +788,59 @@ export default function CreateListing() {
 
         {/* Media & Submission Section */}
         <div className='flex flex-col flex-1 gap-4'>
-          <div className='flex flex-col gap-1'>
-            <p className='font-semibold text-slate-800'>
-              Listing Images
-              <span className='font-normal text-slate-500 ml-2 text-xs'>
-                (The first image will be the cover, max 6 &bull; Any image size supported)
+          <div className='flex flex-col gap-2'>
+            <div className='flex items-center justify-between'>
+              <p className='font-semibold text-slate-800 text-sm'>
+                Listing Images ({formData.imageUrls.length}/6)
+              </p>
+              <span className='font-normal text-slate-500 text-xs'>
+                The first image will be the cover
               </span>
-            </p>
-            <div className='flex gap-4'>
+            </div>
+
+            {/* Local System File Dropzone & Browser */}
+            <div className='relative'>
               <input
-                onChange={(e) => setFiles(e.target.files)}
-                className='p-3 border border-slate-300 rounded-lg w-full text-sm'
+                onChange={(e) => {
+                  handleProcessLocalFiles(e.target.files);
+                  e.target.value = '';
+                }}
+                className='hidden'
                 type='file'
-                id='images'
+                id='local-system-images'
                 accept='image/*'
                 multiple
               />
-              <button
-                type='button'
-                disabled={uploading}
-                onClick={handleImageSubmit}
-                className='p-3 text-emerald-700 border border-emerald-600 rounded-lg uppercase hover:bg-emerald-50 text-xs font-bold disabled:opacity-80 transition'
+              <label
+                htmlFor='local-system-images'
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer?.files) {
+                    handleProcessLocalFiles(e.dataTransfer.files);
+                  }
+                }}
+                className='flex flex-col items-center justify-center p-5 border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/80 rounded-xl transition cursor-pointer group text-center'
               >
-                {uploading ? 'Uploading...' : 'Upload'}
-              </button>
+                <div className='w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mb-2 group-hover:scale-110 transition'>
+                  <svg className='w-5 h-5' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                    <path strokeLinecap='round' strokeLinejoin='round' strokeWidth='2' d='M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' />
+                  </svg>
+                </div>
+                <span className='text-xs font-bold text-emerald-950 group-hover:text-emerald-900'>
+                  Choose Images from Local System
+                </span>
+                <span className='text-[11px] text-slate-500 mt-0.5'>
+                  Click to browse local files or drag &amp; drop photos from your device (.jpg, .png, .webp)
+                </span>
+              </label>
+
+              {uploading && (
+                <div className='mt-2 p-2.5 bg-emerald-100/90 text-emerald-900 rounded-lg text-xs flex items-center justify-center gap-2 font-medium animate-pulse'>
+                  <span className='w-3.5 h-3.5 border-2 border-emerald-700 border-t-transparent rounded-full animate-spin' />
+                  <span>Optimizing &amp; uploading local photos...</span>
+                </div>
+              )}
             </div>
           </div>
 

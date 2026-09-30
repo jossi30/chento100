@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    // Health check test doc
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
+    // Listings Collection: allow full access for server and client operations
+    match /listings/{listingId} {
+      allow read, write: if true;
+    }
+
+    // Users Collection: allow full access for server and client operations
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Admins registry collection
+    match /admins/{adminId} {
+      allow read, write: if true;
+    }
+
+    // Default match for other collections
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

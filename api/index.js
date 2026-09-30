@@ -9,7 +9,16 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
 
+import { initFirebaseStore, getFirebaseConfig } from './utils/firebaseStore.js';
+
 dotenv.config();
+
+// Initialize Firebase Backend Store for chento100
+const fbConfig = getFirebaseConfig();
+console.log(`[Backend] Initializing Firebase backend for Project: ${fbConfig.projectId} (${fbConfig.firestoreDatabaseId})`);
+initFirebaseStore()
+  .then(() => console.log(`[Backend] Firebase persistent store active for chento100!`))
+  .catch((e) => console.warn(`[Backend] Firebase store warning:`, e.message));
 
 // Mongoose connection setup with fast failover
 mongoose.set('bufferCommands', false);

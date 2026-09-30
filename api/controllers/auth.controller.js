@@ -4,6 +4,7 @@ import bcryptjs from 'bcryptjs';
 import { errorHandler } from '../utils/error.js';
 import jwt from 'jsonwebtoken';
 import { mockStore } from '../utils/mockStore.js';
+import { firebaseStore } from '../utils/firebaseStore.js';
 
 const isDbConnected = () => mongoose.connection.readyState === 1;
 
@@ -11,17 +12,12 @@ export const signup = async (req, res, next) => {
   const { username, email, password } = req.body;
   const hashedPassword = bcryptjs.hashSync(password, 10);
   try {
-    if (isDbConnected()) {
-      const newUser = new User({ username, email, password: hashedPassword });
-      await newUser.save();
-      return res.status(201).json('User created successfully!');
-    }
-  } catch (error) {
-    console.warn('DB signup error, fallback to mockStore:', error.message);
-  }
-
-  try {
+    firebaseStore.createUser({ username, email, password: hashedPassword });
     mockStore.createUser({ username, email, password: hashedPassword });
+
+    if (isDbConnected()) {
+      User.create({ username, email, password: hashedPassword }).catch(() => {});
+    }
     return res.status(201).json('User created successfully!');
   } catch (error) {
     next(error);
@@ -39,43 +35,18 @@ export const signin = async (req, res, next) => {
       email.toLowerCase() === 'admin@chento100.com' ||
       email.toLowerCase().includes('admin'));
 
-  try {
-    if (isDbConnected()) {
-      const validUser = await User.findOne({ email });
-      if (validUser) {
-        const validPassword = bcryptjs.compareSync(password, validUser.password);
-        if (!validPassword) return next(errorHandler(401, 'Wrong credentials!'));
-        const isAdmin = Boolean(isSpecialAdmin || validUser.isAdmin || validUser.role === 'admin');
-        const token = jwt.sign(
-          { id: validUser._id, role: validUser.role || (isAdmin ? 'admin' : 'user'), isAdmin },
-          jwtSecret
-        );
-        const { password: pass, ...rest } = validUser._doc;
-        return res
-          .cookie('access_token', token, {
-            httpOnly: true,
-            sameSite: 'none',
-            secure: true,
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-          })
-          .status(200)
-          .json({ ...rest, isAdmin, token });
-      }
-    }
-  } catch (error) {
-    console.warn('DB signin error, fallback to mockStore:', error.message);
-  }
+  const user = firebaseStore.getUserByEmail(email) || mockStore.findUserByEmail(email);
+  if (!user) return next(errorHandler(404, 'User not found!'));
 
-  const mockUser = mockStore.findUserByEmail(email);
-  if (!mockUser) return next(errorHandler(404, 'User not found!'));
-  const validPassword = bcryptjs.compareSync(password, mockUser.password);
+  const validPassword = bcryptjs.compareSync(password, user.password);
   if (!validPassword) return next(errorHandler(401, 'Wrong credentials!'));
-  const isAdmin = Boolean(isSpecialAdmin || mockUser.isAdmin || mockUser.role === 'admin');
+
+  const isAdmin = Boolean(isSpecialAdmin || user.isAdmin || user.role === 'admin');
   const token = jwt.sign(
-    { id: mockUser._id, role: mockUser.role || (isAdmin ? 'admin' : 'user'), isAdmin },
+    { id: user._id, role: user.role || (isAdmin ? 'admin' : 'user'), isAdmin },
     jwtSecret
   );
-  const { password: pass, ...rest } = mockUser;
+  const { password: pass, ...rest } = user;
   return res
     .cookie('access_token', token, {
       httpOnly: true,
@@ -88,24 +59,12 @@ export const signin = async (req, res, next) => {
 };
 
 export const getMe = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    if (isDbConnected()) {
-      const user = await User.findById(userId);
-      if (user) {
-        const { password: pass, ...rest } = user._doc;
-        return res.status(200).json(rest);
-      }
-    }
-  } catch (error) {
-    console.warn('DB getMe error, fallback to mockStore:', error.message);
-  }
-
-  const mockUser = mockStore.findUserById(req.user.id);
-  if (!mockUser) {
+  const userId = req.user.id;
+  const user = firebaseStore.getUser(userId) || mockStore.findUserById(userId);
+  if (!user) {
     return next(errorHandler(404, 'User not found!'));
   }
-  const { password: pass, ...rest } = mockUser;
+  const { password: pass, ...rest } = user;
   return res.status(200).json(rest);
 };
 
@@ -119,66 +78,9 @@ export const google = async (req, res, next) => {
       emailVal.toLowerCase() === 'admin@chento100.com' ||
       emailVal.toLowerCase().includes('admin'));
 
-  try {
-    if (isDbConnected()) {
-      const user = await User.findOne({ email: req.body.email });
-      if (user) {
-        const isAdmin = Boolean(isSpecialAdmin || user.isAdmin || user.role === 'admin');
-        const token = jwt.sign(
-          { id: user._id, role: user.role || (isAdmin ? 'admin' : 'user'), isAdmin },
-          jwtSecret
-        );
-        const { password: pass, ...rest } = user._doc;
-        return res
-          .cookie('access_token', token, {
-            httpOnly: true,
-            sameSite: 'none',
-            secure: true,
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-          })
-          .status(200)
-          .json({ ...rest, isAdmin, token });
-      } else {
-        const generatedPassword =
-          Math.random().toString(36).slice(-8) +
-          Math.random().toString(36).slice(-8);
-        const hashedPassword = bcryptjs.hashSync(generatedPassword, 10);
-        const newUser = new User({
-          username:
-            (req.body.name || 'user').split(' ').join('').toLowerCase() +
-            Math.random().toString(36).slice(-4),
-          email: req.body.email,
-          password: hashedPassword,
-          avatar: req.body.photo,
-          isAdmin: Boolean(isSpecialAdmin),
-          role: isSpecialAdmin ? 'admin' : 'user',
-        });
-        await newUser.save();
-        const isAdmin = Boolean(isSpecialAdmin || newUser.isAdmin || newUser.role === 'admin');
-        const token = jwt.sign(
-          { id: newUser._id, role: newUser.role || (isAdmin ? 'admin' : 'user'), isAdmin },
-          jwtSecret
-        );
-        const { password: pass, ...rest } = newUser._doc;
-        return res
-          .cookie('access_token', token, {
-            httpOnly: true,
-            sameSite: 'none',
-            secure: true,
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-          })
-          .status(200)
-          .json({ ...rest, isAdmin, token });
-      }
-    }
-  } catch (error) {
-    console.warn('DB google auth error, fallback to mockStore:', error.message);
-  }
-
-  // Mock store fallback
-  let mockUser = mockStore.findUserByEmail(req.body.email);
-  if (!mockUser) {
-    mockUser = mockStore.createUser({
+  let user = firebaseStore.getUserByEmail(req.body.email) || mockStore.findUserByEmail(req.body.email);
+  if (!user) {
+    user = firebaseStore.createUser({
       username:
         (req.body.name || 'user').split(' ').join('').toLowerCase() +
         Math.random().toString(36).slice(-4),
@@ -188,13 +90,19 @@ export const google = async (req, res, next) => {
       isAdmin: Boolean(isSpecialAdmin),
       role: isSpecialAdmin ? 'admin' : 'user',
     });
+    mockStore.createUser(user);
+
+    if (isDbConnected()) {
+      User.create(user).catch(() => {});
+    }
   }
-  const isAdmin = Boolean(isSpecialAdmin || mockUser.isAdmin || mockUser.role === 'admin');
+
+  const isAdmin = Boolean(isSpecialAdmin || user.isAdmin || user.role === 'admin');
   const token = jwt.sign(
-    { id: mockUser._id, role: mockUser.role || (isAdmin ? 'admin' : 'user'), isAdmin },
+    { id: user._id, role: user.role || (isAdmin ? 'admin' : 'user'), isAdmin },
     jwtSecret
   );
-  const { password: pass, ...rest } = mockUser;
+  const { password: pass, ...rest } = user;
   return res
     .cookie('access_token', token, {
       httpOnly: true,

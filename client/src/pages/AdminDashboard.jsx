@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import { compressImage } from '../utils/imageCompressor';
 
 export default function AdminDashboard() {
   const { currentUser } = useSelector((state) => state.user);
@@ -12,9 +13,44 @@ export default function AdminDashboard() {
   const [notification, setNotification] = useState(null);
 
   // Filters
-  const [activeTab, setActiveTab] = useState('pending'); // 'pending' or 'all'
+  const [activeTab, setActiveTab] = useState('all'); // default to 'all' so every listing appears on the list
   const [categoryFilter, setCategoryFilter] = useState('all'); // 'all', 'guesthouse', 'car_service'
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Add Listing Modal State
+  const [isAddingListing, setIsAddingListing] = useState(false);
+  const [newListingCategory, setNewListingCategory] = useState('guesthouse');
+  const [newListingData, setNewListingData] = useState({
+    title: '',
+    description: '',
+    location: '',
+    regularPrice: '120',
+    discountPrice: '95',
+    offer: false,
+    bedrooms: 1,
+    bathrooms: 1,
+    maxGuests: 2,
+    furnished: true,
+    parking: true,
+    amenities: ['WiFi', 'Kitchen', 'Air Conditioning'],
+    make: 'Toyota',
+    model: 'Camry Sedan',
+    year: 2023,
+    seats: 4,
+    transmission: 'automatic',
+    driverName: '',
+    driverContact: '',
+    driverIncluded: true,
+    imageUrls: [
+      '/images/airbnb_apartment_living.jpg',
+      '/images/airbnb_apartment_bed.jpg',
+    ],
+  });
+  const [isSavingNew, setIsSavingNew] = useState(false);
+  const [newListingError, setNewListingError] = useState(null);
+  const [newAddImageUrl, setNewAddImageUrl] = useState('');
+  const [isProcessingNewLocalImages, setIsProcessingNewLocalImages] = useState(false);
+  const [newLocalImageNotice, setNewLocalImageNotice] = useState('');
 
   // Edit Modal State
   const [editingListing, setEditingListing] = useState(null);
@@ -22,6 +58,8 @@ export default function AdminDashboard() {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState(null);
   const [newImageUrl, setNewImageUrl] = useState('');
+  const [isProcessingEditLocalImages, setIsProcessingEditLocalImages] = useState(false);
+  const [editLocalImageNotice, setEditLocalImageNotice] = useState('');
 
   // Delete Confirmation Modal State
   const [deletingListing, setDeletingListing] = useState(null);
@@ -153,6 +191,217 @@ export default function AdminDashboard() {
       showNotification(err.message, 'error');
     } finally {
       setActionLoading((prev) => ({ ...prev, [id]: null }));
+    }
+  };
+
+  // Action: Open Add Listing Modal
+  const handleOpenAddModal = () => {
+    setIsAddingListing(true);
+    setNewListingError(null);
+    setNewAddImageUrl('');
+  };
+
+  const handleCloseAddModal = () => {
+    setIsAddingListing(false);
+    setNewListingError(null);
+    setNewAddImageUrl('');
+  };
+
+  const handleNewListingCategoryChange = (cat) => {
+    setNewListingCategory(cat);
+    if (cat === 'car_service') {
+      setNewListingData((prev) => ({
+        ...prev,
+        imageUrls: ['/images/city_regular_sedan.jpg', '/images/city_driver_car.jpg'],
+        regularPrice: prev.regularPrice || '75',
+      }));
+    } else {
+      setNewListingData((prev) => ({
+        ...prev,
+        imageUrls: ['/images/airbnb_apartment_living.jpg', '/images/airbnb_apartment_bed.jpg'],
+        regularPrice: prev.regularPrice || '120',
+      }));
+    }
+  };
+
+  const handleNewListingFieldChange = (field, value) => {
+    setNewListingData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleAddNewImageUrl = (e) => {
+    e.preventDefault();
+    if (!newAddImageUrl.trim()) return;
+    setNewListingData((prev) => ({
+      ...prev,
+      imageUrls: [...prev.imageUrls, newAddImageUrl.trim()],
+    }));
+    setNewAddImageUrl('');
+  };
+
+  const handleRemoveNewImageUrl = (indexToRemove) => {
+    setNewListingData((prev) => ({
+      ...prev,
+      imageUrls: prev.imageUrls.filter((_, idx) => idx !== indexToRemove),
+    }));
+  };
+
+  const handleProcessLocalFilesForNewListing = async (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList).filter((f) => f.type.startsWith('image/'));
+    if (files.length === 0) {
+      setNewListingError('Please select valid image files (.jpg, .png, .webp).');
+      return;
+    }
+
+    try {
+      setIsProcessingNewLocalImages(true);
+      setNewLocalImageNotice(`Optimizing ${files.length} photo${files.length > 1 ? 's' : ''} from local system...`);
+      setNewListingError(null);
+
+      const compressedUrls = [];
+      for (const file of files) {
+        const url = await compressImage(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.82 });
+        if (url) compressedUrls.push(url);
+      }
+
+      if (compressedUrls.length > 0) {
+        setNewListingData((prev) => ({
+          ...prev,
+          imageUrls: [...prev.imageUrls, ...compressedUrls],
+        }));
+        setNewLocalImageNotice(`Added ${compressedUrls.length} photo${compressedUrls.length > 1 ? 's' : ''} from local system!`);
+        setTimeout(() => setNewLocalImageNotice(''), 3500);
+      }
+    } catch (err) {
+      console.error('Error processing local images:', err);
+      setNewListingError('Failed to read local image file. Please try another image.');
+    } finally {
+      setIsProcessingNewLocalImages(false);
+    }
+  };
+
+  const handleProcessLocalFilesForEditListing = async (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList).filter((f) => f.type.startsWith('image/'));
+    if (files.length === 0) {
+      setEditError('Please select valid image files (.jpg, .png, .webp).');
+      return;
+    }
+
+    try {
+      setIsProcessingEditLocalImages(true);
+      setEditLocalImageNotice(`Optimizing ${files.length} photo${files.length > 1 ? 's' : ''} from local system...`);
+      setEditError(null);
+
+      const compressedUrls = [];
+      for (const file of files) {
+        const url = await compressImage(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.82 });
+        if (url) compressedUrls.push(url);
+      }
+
+      if (compressedUrls.length > 0) {
+        setEditFormData((prev) => ({
+          ...prev,
+          imageUrls: [...(prev.imageUrls || []), ...compressedUrls],
+        }));
+        setEditLocalImageNotice(`Added ${compressedUrls.length} photo${compressedUrls.length > 1 ? 's' : ''} from local system!`);
+        setTimeout(() => setEditLocalImageNotice(''), 3500);
+      }
+    } catch (err) {
+      console.error('Error processing local images for edit:', err);
+      setEditError('Failed to read local image file. Please try another image.');
+    } finally {
+      setIsProcessingEditLocalImages(false);
+    }
+  };
+
+  const handleApplyNewPresetPhotos = (cat) => {
+    if (cat === 'guesthouse') {
+      const apartmentPhotos = [
+        '/images/airbnb_apartment_living.jpg',
+        '/images/airbnb_apartment_bed.jpg',
+        'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=1200&q=80',
+        'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=80',
+      ];
+      setNewListingData((prev) => ({ ...prev, imageUrls: apartmentPhotos }));
+    } else {
+      const carPhotos = [
+        '/images/city_regular_sedan.jpg',
+        '/images/city_driver_car.jpg',
+        'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1200&q=80',
+        'https://images.unsplash.com/photo-1590362891991-f776e747a588?auto=format&fit=crop&w=1200&q=80',
+      ];
+      setNewListingData((prev) => ({ ...prev, imageUrls: carPhotos }));
+    }
+  };
+
+  const handleSaveNewListing = async (e) => {
+    e.preventDefault();
+    if (!newListingData.title?.trim()) {
+      setNewListingError('Title is required');
+      return;
+    }
+    if (!newListingData.location?.trim()) {
+      setNewListingError('Location / Address is required');
+      return;
+    }
+    if (!newListingData.regularPrice || Number(newListingData.regularPrice) <= 0) {
+      setNewListingError('A valid rate is required');
+      return;
+    }
+    if (newListingData.imageUrls.length === 0) {
+      setNewListingError('At least one photo is required');
+      return;
+    }
+
+    try {
+      setIsSavingNew(true);
+      setNewListingError(null);
+
+      const payload = {
+        ...newListingData,
+        category: newListingCategory,
+        type: newListingCategory === 'car_service' ? 'sale' : 'rent',
+        name: newListingData.title,
+        address: newListingData.location,
+        regularPrice: Number(newListingData.regularPrice || 0),
+        price: Number(newListingData.regularPrice || 0),
+        discountPrice: Number(newListingData.discountPrice || 0),
+        status: 'approved',
+        isApproved: true,
+        active: true,
+        isActive: true,
+        bedrooms: Number(newListingData.bedrooms || 1),
+        bathrooms: Number(newListingData.bathrooms || 1),
+        maxGuests: Number(newListingData.maxGuests || 2),
+        seats: Number(newListingData.seats || 4),
+        year: Number(newListingData.year || 2023),
+        userRef: currentUser?._id || 'admin_master',
+      };
+
+      const res = await fetch('/api/admin/listings', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.success === false) {
+        throw new Error(data.message || 'Failed to create listing');
+      }
+
+      setListings((prev) => [data, ...prev]);
+      showNotification(`Listing "${newListingData.title}" created & published successfully!`, 'success');
+      handleCloseAddModal();
+      fetchListings();
+    } catch (err) {
+      setNewListingError(err.message || 'Failed to create listing');
+    } finally {
+      setIsSavingNew(false);
     }
   };
 
@@ -460,11 +709,19 @@ export default function AdminDashboard() {
               </svg>
               Refresh
             </button>
+            <button
+              type='button'
+              id='admin-add-listing-modal-btn'
+              onClick={handleOpenAddModal}
+              className='flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xs transition cursor-pointer'
+            >
+              + Add New Listing
+            </button>
             <Link
               to='/create-listing'
-              className='flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xs transition'
+              className='hidden sm:flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg transition'
             >
-              + Create Listing
+              Full Page Form
             </Link>
           </div>
         </div>
@@ -549,8 +806,21 @@ export default function AdminDashboard() {
 
         {/* Filter and Tab Navigation Bar */}
         <div className='my-6 bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4'>
-          {/* Main Tabs: Pending Approvals vs All Listings */}
+          {/* Main Tabs: All Listings vs Pending Approvals */}
           <div className='flex items-center gap-2'>
+            <button
+              type='button'
+              id='tab-all-listings'
+              onClick={() => setActiveTab('all')}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                activeTab === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              All Listings ({listings.length})
+            </button>
+
             <button
               type='button'
               id='tab-pending-listings'
@@ -573,19 +843,6 @@ export default function AdminDashboard() {
                   {pendingCount}
                 </span>
               )}
-            </button>
-
-            <button
-              type='button'
-              id='tab-all-listings'
-              onClick={() => setActiveTab('all')}
-              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                activeTab === 'all'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              All Listings ({listings.length})
             </button>
           </div>
 
@@ -1098,6 +1355,406 @@ export default function AdminDashboard() {
         )}
 
         {/* ========================================================================= */}
+        {/* ADMIN CREATE / ADD LISTING MODAL */}
+        {/* ========================================================================= */}
+        {isAddingListing && (
+          <div className='fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn'>
+            <div className='bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden my-auto'>
+              {/* Modal Header */}
+              <div className='flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/80'>
+                <div>
+                  <div className='flex items-center gap-2'>
+                    <span className='px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white rounded'>
+                      Admin Direct Publishing
+                    </span>
+                    <span className='text-xs text-slate-500'>
+                      Instant addition to platform inventory
+                    </span>
+                  </div>
+                  <h2 className='text-lg font-bold text-slate-900 mt-1'>
+                    Add New Listing
+                  </h2>
+                </div>
+                <button
+                  type='button'
+                  onClick={handleCloseAddModal}
+                  className='p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition cursor-pointer'
+                >
+                  <svg className='w-5 h-5' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                    <path strokeLinecap='round' strokeLinejoin='round' strokeWidth='2' d='M6 18L18 6M6 6l12 12' />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Modal Scrollable Form */}
+              <form onSubmit={handleSaveNewListing} className='flex-1 overflow-y-auto p-6 space-y-5'>
+                {newListingError && (
+                  <div className='p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs font-medium rounded-lg flex items-center gap-2'>
+                    <svg className='w-4 h-4 text-red-500 shrink-0' fill='currentColor' viewBox='0 0 20 20'>
+                      <path fillRule='evenodd' d='M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z' clipRule='evenodd' />
+                    </svg>
+                    <span>{newListingError}</span>
+                  </div>
+                )}
+
+                {/* Category Switcher */}
+                <div>
+                  <label className='block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2'>
+                    Category
+                  </label>
+                  <div className='grid grid-cols-2 gap-3'>
+                    <button
+                      type='button'
+                      onClick={() => handleNewListingCategoryChange('guesthouse')}
+                      className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition cursor-pointer ${
+                        newListingCategory === 'guesthouse'
+                          ? 'border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-600/20'
+                          : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                          newListingCategory === 'guesthouse'
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        🏠
+                      </div>
+                      <div>
+                        <div className='text-sm font-bold text-slate-900'>Guest House</div>
+                        <div className='text-xs text-slate-500'>Apartments &amp; rooms</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type='button'
+                      onClick={() => handleNewListingCategoryChange('car_service')}
+                      className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition cursor-pointer ${
+                        newListingCategory === 'car_service'
+                          ? 'border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-600/20'
+                          : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                          newListingCategory === 'car_service'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        🚗
+                      </div>
+                      <div>
+                        <div className='text-sm font-bold text-slate-900'>Car &amp; Driver</div>
+                        <div className='text-xs text-slate-500'>City sedans &amp; SUVs</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Title & Location */}
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
+                  <div>
+                    <label className='block text-xs font-semibold text-slate-700 mb-1'>
+                      Listing Title <span className='text-red-500'>*</span>
+                    </label>
+                    <input
+                      type='text'
+                      value={newListingData.title}
+                      onChange={(e) => handleNewListingFieldChange('title', e.target.value)}
+                      placeholder='e.g. Luxury Downtown Studio or Executive Sedan'
+                      required
+                      className='w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-slate-800'
+                    />
+                  </div>
+
+                  <div>
+                    <label className='block text-xs font-semibold text-slate-700 mb-1'>
+                      Location / Address <span className='text-red-500'>*</span>
+                    </label>
+                    <input
+                      type='text'
+                      value={newListingData.location}
+                      onChange={(e) => handleNewListingFieldChange('location', e.target.value)}
+                      placeholder='e.g. 450 Pine St, Downtown'
+                      required
+                      className='w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-slate-800'
+                    />
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className='block text-xs font-semibold text-slate-700 mb-1'>Description</label>
+                  <textarea
+                    rows={2}
+                    value={newListingData.description}
+                    onChange={(e) => handleNewListingFieldChange('description', e.target.value)}
+                    placeholder='Brief description of amenities, location perks, or chauffeur service...'
+                    className='w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-slate-800'
+                  />
+                </div>
+
+                {/* Rates */}
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200'>
+                  <div>
+                    <label className='block text-xs font-semibold text-slate-700 mb-1'>
+                      Regular Price ($ {newListingCategory === 'guesthouse' ? '/night' : '/day'}) <span className='text-red-500'>*</span>
+                    </label>
+                    <input
+                      type='number'
+                      min='1'
+                      value={newListingData.regularPrice}
+                      onChange={(e) => handleNewListingFieldChange('regularPrice', e.target.value)}
+                      className='w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg'
+                    />
+                  </div>
+                  <div>
+                    <label className='block text-xs font-semibold text-slate-700 mb-1'>
+                      Discount Price ($) (Optional)
+                    </label>
+                    <input
+                      type='number'
+                      min='0'
+                      value={newListingData.discountPrice}
+                      onChange={(e) => handleNewListingFieldChange('discountPrice', e.target.value)}
+                      className='w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg'
+                    />
+                  </div>
+                </div>
+
+                {/* Specs */}
+                {newListingCategory === 'guesthouse' ? (
+                  <div className='grid grid-cols-3 gap-3 p-3 bg-indigo-50/40 rounded-xl border border-indigo-100'>
+                    <div>
+                      <label className='block text-xs font-medium text-slate-700 mb-1'>Bedrooms</label>
+                      <input
+                        type='number'
+                        min='1'
+                        value={newListingData.bedrooms}
+                        onChange={(e) => handleNewListingFieldChange('bedrooms', e.target.value)}
+                        className='w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded-lg'
+                      />
+                    </div>
+                    <div>
+                      <label className='block text-xs font-medium text-slate-700 mb-1'>Bathrooms</label>
+                      <input
+                        type='number'
+                        min='1'
+                        value={newListingData.bathrooms}
+                        onChange={(e) => handleNewListingFieldChange('bathrooms', e.target.value)}
+                        className='w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded-lg'
+                      />
+                    </div>
+                    <div>
+                      <label className='block text-xs font-medium text-slate-700 mb-1'>Max Guests</label>
+                      <input
+                        type='number'
+                        min='1'
+                        value={newListingData.maxGuests}
+                        onChange={(e) => handleNewListingFieldChange('maxGuests', e.target.value)}
+                        className='w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded-lg'
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className='grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-emerald-50/40 rounded-xl border border-emerald-100'>
+                    <div>
+                      <label className='block text-xs font-medium text-slate-700 mb-1'>Make</label>
+                      <input
+                        type='text'
+                        value={newListingData.make}
+                        onChange={(e) => handleNewListingFieldChange('make', e.target.value)}
+                        className='w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded-lg'
+                      />
+                    </div>
+                    <div>
+                      <label className='block text-xs font-medium text-slate-700 mb-1'>Model</label>
+                      <input
+                        type='text'
+                        value={newListingData.model}
+                        onChange={(e) => handleNewListingFieldChange('model', e.target.value)}
+                        className='w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded-lg'
+                      />
+                    </div>
+                    <div>
+                      <label className='block text-xs font-medium text-slate-700 mb-1'>Year</label>
+                      <input
+                        type='number'
+                        value={newListingData.year}
+                        onChange={(e) => handleNewListingFieldChange('year', e.target.value)}
+                        className='w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded-lg'
+                      />
+                    </div>
+                    <div>
+                      <label className='block text-xs font-medium text-slate-700 mb-1'>Seats</label>
+                      <input
+                        type='number'
+                        value={newListingData.seats}
+                        onChange={(e) => handleNewListingFieldChange('seats', e.target.value)}
+                        className='w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded-lg'
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Photos */}
+                <div className='space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200'>
+                  <div className='flex items-center justify-between'>
+                    <div>
+                      <label className='text-xs font-bold text-slate-800 uppercase tracking-wider block'>
+                        Listing Photos ({newListingData.imageUrls.length})
+                      </label>
+                      <span className='text-[11px] text-slate-500'>
+                        The first image serves as the main search cover
+                      </span>
+                    </div>
+                    <button
+                      type='button'
+                      onClick={() => handleApplyNewPresetPhotos(newListingCategory)}
+                      className='text-[11px] font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md transition cursor-pointer shadow-2xs'
+                    >
+                      + Load Sample Photos
+                    </button>
+                  </div>
+
+                  {/* Local System File Upload Area (Drag & Drop or Click) */}
+                  <div className='relative'>
+                    <input
+                      type='file'
+                      id='admin-add-local-photos'
+                      accept='image/*'
+                      multiple
+                      onChange={(e) => {
+                        handleProcessLocalFilesForNewListing(e.target.files);
+                        e.target.value = '';
+                      }}
+                      className='hidden'
+                    />
+                    <label
+                      htmlFor='admin-add-local-photos'
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (e.dataTransfer?.files) {
+                          handleProcessLocalFilesForNewListing(e.dataTransfer.files);
+                        }
+                      }}
+                      className='flex flex-col items-center justify-center p-4 border-2 border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/40 hover:bg-indigo-50/80 rounded-xl transition cursor-pointer group text-center'
+                    >
+                      <div className='w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center mb-2 group-hover:scale-110 transition'>
+                        <svg className='w-5 h-5' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                          <path strokeLinecap='round' strokeLinejoin='round' strokeWidth='2' d='M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' />
+                        </svg>
+                      </div>
+                      <span className='text-xs font-bold text-indigo-900 group-hover:text-indigo-950'>
+                        Choose Images from Local System
+                      </span>
+                      <span className='text-[11px] text-slate-500 mt-0.5'>
+                        Click to browse local files or drag &amp; drop photos from your computer (.jpg, .png, .webp)
+                      </span>
+                    </label>
+
+                    {/* Progress / Notice Banner */}
+                    {isProcessingNewLocalImages && (
+                      <div className='mt-2 p-2 bg-indigo-100/80 text-indigo-900 rounded-lg text-xs flex items-center justify-center gap-2 font-medium animate-pulse'>
+                        <span className='w-3.5 h-3.5 border-2 border-indigo-700 border-t-transparent rounded-full animate-spin' />
+                        <span>Processing &amp; compressing local images...</span>
+                      </div>
+                    )}
+                    {newLocalImageNotice && !isProcessingNewLocalImages && (
+                      <div className='mt-2 p-2 bg-emerald-100 text-emerald-800 rounded-lg text-xs text-center font-medium'>
+                        ✓ {newLocalImageNotice}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Or Paste URL */}
+                  <div className='pt-1'>
+                    <span className='text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1'>
+                      Or Add by Web URL
+                    </span>
+                    <div className='flex gap-2'>
+                      <input
+                        type='url'
+                        placeholder='Paste image URL (https://... or /images/...)'
+                        value={newAddImageUrl}
+                        onChange={(e) => setNewAddImageUrl(e.target.value)}
+                        className='flex-1 px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-slate-700'
+                      />
+                      <button
+                        type='button'
+                        onClick={handleAddNewImageUrl}
+                        className='px-3.5 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition cursor-pointer'
+                      >
+                        Add URL
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Photo Thumbnails Preview */}
+                  {newListingData.imageUrls.length > 0 && (
+                    <div className='pt-2'>
+                      <span className='text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5'>
+                        Current Photo Gallery ({newListingData.imageUrls.length})
+                      </span>
+                      <div className='grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2'>
+                        {newListingData.imageUrls.map((url, i) => (
+                          <div key={i} className='relative group rounded-lg overflow-hidden border border-slate-200 bg-white aspect-square shadow-2xs'>
+                            <img
+                              src={url}
+                              alt={`thumb-${i}`}
+                              className='w-full h-full object-cover'
+                              onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = '/images/airbnb_apartment_living.jpg';
+                              }}
+                            />
+                            {i === 0 && (
+                              <span className='absolute bottom-1 left-1 bg-slate-900/85 text-white text-[8px] font-bold px-1.5 py-0.5 rounded'>
+                                Cover
+                              </span>
+                            )}
+                            <button
+                              type='button'
+                              onClick={() => handleRemoveNewImageUrl(i)}
+                              className='absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white w-5 h-5 rounded-full text-xs flex items-center justify-center opacity-85 group-hover:opacity-100 transition cursor-pointer shadow-xs'
+                              title='Remove photo'
+                            >
+                              &times;
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer buttons */}
+                <div className='flex items-center justify-end gap-3 pt-3 border-t border-slate-200'>
+                  <button
+                    type='button'
+                    onClick={handleCloseAddModal}
+                    disabled={isSavingNew}
+                    className='px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg'
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type='submit'
+                    disabled={isSavingNew}
+                    className='px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs flex items-center gap-1.5'
+                  >
+                    {isSavingNew ? 'Creating...' : 'Create & Publish Listing'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
         {/* ADMIN EDIT LISTING MODAL */}
         {/* ========================================================================= */}
         {editingListing && (
@@ -1469,27 +2126,83 @@ export default function AdminDashboard() {
                 )}
 
                 {/* 6. Listing Photos Manager */}
-                <div className='space-y-3'>
+                <div className='space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200'>
                   <div className='flex items-center justify-between'>
-                    <label className='text-xs font-bold text-slate-700 uppercase tracking-wider'>
-                      Photos ({editFormData.imageUrls?.length || 0})
-                    </label>
+                    <div>
+                      <label className='text-xs font-bold text-slate-800 uppercase tracking-wider block'>
+                        Photos ({editFormData.imageUrls?.length || 0})
+                      </label>
+                      <span className='text-[11px] text-slate-500'>
+                        The first image serves as the main search cover
+                      </span>
+                    </div>
                     <div className='flex gap-2'>
                       <button
                         type='button'
                         onClick={() => handleAddSamplePhotos('guesthouse')}
-                        className='px-2.5 py-1 text-[11px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded font-medium cursor-pointer'
+                        className='px-2.5 py-1 text-[11px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded font-medium cursor-pointer shadow-2xs'
                       >
                         + Airbnb Photos
                       </button>
                       <button
                         type='button'
                         onClick={() => handleAddSamplePhotos('car_service')}
-                        className='px-2.5 py-1 text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded font-medium cursor-pointer'
+                        className='px-2.5 py-1 text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded font-medium cursor-pointer shadow-2xs'
                       >
                         + City Sedan Photos
                       </button>
                     </div>
+                  </div>
+
+                  {/* Local System File Upload Area */}
+                  <div className='relative'>
+                    <input
+                      type='file'
+                      id='admin-edit-local-photos'
+                      accept='image/*'
+                      multiple
+                      onChange={(e) => {
+                        handleProcessLocalFilesForEditListing(e.target.files);
+                        e.target.value = '';
+                      }}
+                      className='hidden'
+                    />
+                    <label
+                      htmlFor='admin-edit-local-photos'
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (e.dataTransfer?.files) {
+                          handleProcessLocalFilesForEditListing(e.dataTransfer.files);
+                        }
+                      }}
+                      className='flex flex-col items-center justify-center p-4 border-2 border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/40 hover:bg-indigo-50/80 rounded-xl transition cursor-pointer group text-center'
+                    >
+                      <div className='w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center mb-2 group-hover:scale-110 transition'>
+                        <svg className='w-5 h-5' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                          <path strokeLinecap='round' strokeLinejoin='round' strokeWidth='2' d='M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' />
+                        </svg>
+                      </div>
+                      <span className='text-xs font-bold text-indigo-900 group-hover:text-indigo-950'>
+                        Choose Images from Local System
+                      </span>
+                      <span className='text-[11px] text-slate-500 mt-0.5'>
+                        Click to browse local files or drag &amp; drop photos from your computer (.jpg, .png, .webp)
+                      </span>
+                    </label>
+
+                    {/* Progress / Notice Banner */}
+                    {isProcessingEditLocalImages && (
+                      <div className='mt-2 p-2 bg-indigo-100/80 text-indigo-900 rounded-lg text-xs flex items-center justify-center gap-2 font-medium animate-pulse'>
+                        <span className='w-3.5 h-3.5 border-2 border-indigo-700 border-t-transparent rounded-full animate-spin' />
+                        <span>Processing &amp; compressing local images...</span>
+                      </div>
+                    )}
+                    {editLocalImageNotice && !isProcessingEditLocalImages && (
+                      <div className='mt-2 p-2 bg-emerald-100 text-emerald-800 rounded-lg text-xs text-center font-medium'>
+                        ✓ {editLocalImageNotice}
+                      </div>
+                    )}
                   </div>
 
                   {/* Image previews grid */}
@@ -1497,7 +2210,7 @@ export default function AdminDashboard() {
                     {editFormData.imageUrls?.map((url, idx) => (
                       <div
                         key={idx}
-                        className='relative group rounded-lg overflow-hidden border border-slate-200 bg-slate-100 aspect-video'
+                        className='relative group rounded-lg overflow-hidden border border-slate-200 bg-slate-100 aspect-video shadow-2xs'
                       >
                         <img
                           src={url}
@@ -1528,21 +2241,26 @@ export default function AdminDashboard() {
                   </div>
 
                   {/* Add Image URL Row */}
-                  <div className='flex gap-2 pt-2'>
-                    <input
-                      type='text'
-                      value={newImageUrl}
-                      onChange={(e) => setNewImageUrl(e.target.value)}
-                      placeholder='Paste image URL here (e.g. /images/airbnb_apartment_bed.jpg or https://...)'
-                      className='flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs'
-                    />
-                    <button
-                      type='button'
-                      onClick={handleAddImageUrl}
-                      className='px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold cursor-pointer shrink-0'
-                    >
-                      Add Photo
-                    </button>
+                  <div className='pt-1'>
+                    <span className='text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1'>
+                      Or Add by Web URL
+                    </span>
+                    <div className='flex gap-2'>
+                      <input
+                        type='text'
+                        value={newImageUrl}
+                        onChange={(e) => setNewImageUrl(e.target.value)}
+                        placeholder='Paste image URL here (e.g. /images/airbnb_apartment_bed.jpg or https://...)'
+                        className='flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs'
+                      />
+                      <button
+                        type='button'
+                        onClick={handleAddImageUrl}
+                        className='px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold cursor-pointer shrink-0'
+                      >
+                        Add Photo
+                      </button>
+                    </div>
                   </div>
                 </div>
               </form>
